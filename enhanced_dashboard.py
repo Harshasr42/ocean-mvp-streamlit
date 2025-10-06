@@ -112,28 +112,42 @@ def get_vessel_data(bbox=None, start_date=None, end_date=None):
     if end_date:
         params['end_date'] = end_date
     
-    return fetch_api_data("/api/vessels/positions", params)
+    return fetch_api_data("/api/vessels", params)
 
 def get_map_data(bbox=None, include_species=True, include_vessels=True, include_oceanographic=True):
     """Get combined map data."""
-    params = {
-        'include_species': include_species,
-        'include_vessels': include_vessels,
-        'include_oceanographic': include_oceanographic
-    }
-    if bbox:
-        params['bbox'] = bbox
+    # Since simple_main.py doesn't have a combined endpoint, we'll create mock data
+    # that combines species, vessels, and oceanographic data
+    species_data = get_species_data(bbox) if include_species else None
+    vessel_data = get_vessel_data(bbox) if include_vessels else None
     
-    return fetch_api_data("/api/map/combined", params)
+    return {
+        'species': {'markers': species_data or []},
+        'vessels': {'markers': vessel_data or []},
+        'oceanographic': {'heatmap': []}
+    }
 
 def get_satellite_data(bbox, start_date, end_date):
     """Get satellite data."""
-    params = {
-        'bbox': bbox,
-        'start_date': start_date,
-        'end_date': end_date
+    # Mock satellite data since simple_main.py doesn't have satellite endpoints
+    return {
+        'results': [
+            {
+                'granule_id': 'SST_001',
+                'product': 'Sea Surface Temperature',
+                'start_date': start_date,
+                'cloud_cover': 15.5,
+                'size_mb': 45.2
+            },
+            {
+                'granule_id': 'SST_002', 
+                'product': 'Ocean Color',
+                'start_date': start_date,
+                'cloud_cover': 8.3,
+                'size_mb': 32.1
+            }
+        ]
     }
-    return fetch_api_data("/api/satellite/search", params)
 
 def get_edna_samples(bbox=None, project_name=None, start_date=None, end_date=None, skip=0, limit=200):
     """Get eDNA samples."""
@@ -150,7 +164,13 @@ def get_edna_samples(bbox=None, project_name=None, start_date=None, end_date=Non
 
 def get_edna_stats():
     """Get eDNA stats."""
-    return fetch_api_data("/api/edna/stats")
+    # Mock eDNA stats since simple_main.py doesn't have stats endpoint
+    return {
+        "total_samples": 25,
+        "recent_samples": 5,
+        "avg_species_richness": 12.5,
+        "avg_biodiversity_index": 0.75
+    }
 
 # Main dashboard
 def main():
