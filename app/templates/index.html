@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ocean Species Predictor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f0f8ff;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="number"] {
+            width: 200px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #dff0d8;
+            border: 1px solid #d6e9c6;
+            color: #3c763d;
+        }
+        .error {
+            background-color: #f2dede;
+            border: 1px solid #ebccd1;
+            color: #a94442;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Ocean Species Predictor</h1>
+        <form id="predictionForm">
+            <div class="form-group">
+                <label for="genetic_diversity">Genetic Diversity (0-1):</label>
+                <input type="number" id="genetic_diversity" step="0.01" min="0" max="1" value="0.75" required>
+            </div>
+            <div class="form-group">
+                <label for="biodiversity_index">Biodiversity Index (0-1):</label>
+                <input type="number" id="biodiversity_index" step="0.01" min="0" max="1" value="0.8" required>
+            </div>
+            <div class="form-group">
+                <label for="mean_sst">Mean Sea Surface Temperature (°C):</label>
+                <input type="number" id="mean_sst" step="0.1" min="0" max="40" value="27.5" required>
+            </div>
+            <button type="submit">Predict Species Count</button>
+        </form>
+        <div id="result" style="display: none;"></div>
+    </div>
+
+    <script>
+        document.getElementById('predictionForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const data = {
+                genetic_diversity: parseFloat(document.getElementById('genetic_diversity').value),
+                biodiversity_index: parseFloat(document.getElementById('biodiversity_index').value),
+                mean_sst: parseFloat(document.getElementById('mean_sst').value)
+            };
+
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                const resultDiv = document.getElementById('result');
+                
+                if (result.status === 'success') {
+                    resultDiv.innerHTML = `<h3>Prediction Result</h3>
+                        <p>Predicted Species Count: <strong>${result.predicted_species_count}</strong></p>`;
+                    resultDiv.className = 'success';
+                } else {
+                    resultDiv.innerHTML = `<h3>Error</h3><p>${result.error}</p>`;
+                    resultDiv.className = 'error';
+                }
+                resultDiv.style.display = 'block';
+            } catch (error) {
+                console.error('Error:', error);
+                const resultDiv = document.getElementById('result');
+                resultDiv.innerHTML = `<h3>Error</h3><p>Failed to get prediction: ${error.message}</p>`;
+                resultDiv.className = 'error';
+                resultDiv.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>

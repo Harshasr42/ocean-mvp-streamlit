@@ -1,0 +1,309 @@
+import os
+import json
+import argparse
+from datetime import datetime
+from typing import Tuple
+
+import numpy as np
+import pandas as pd
+import joblib
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import RobustScaler
+from sklearn.ensemble import GradientBoostingRegressor
+
+# reproducibility
+RANDOM_SEED = int(os.environ.get("RANDOM_SEED", "42"))
+np.random.seed(RANDOM_SEED)
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+class EnhancedSpeciesAbundancePredictor:
+    def __init__(self):
+        self.base_dataset = None
+        self.enhanced_dataset = None
+        self.model = None
+        self.scaler = None
+        self.metrics = {}
+        self.X = None
+        self.y = None
+        self.X_train = None
+        self.X_test = None
+        self.y_train = None
+        self.y_test = None
+
+    def enhance_dataset(self, csv_path):
+        """Enhance dataset with controlled variations."""
+        try:
+            # Load base dataset
+            self.base_dataset = pd.read_csv(csv_path)
+            logger.info(f"Base dataset size: {len(self.base_dataset)}")
+            
+            # Create synthetic samples
+            enhanced_data = []
+            for _, row in self.base_dataset.iterrows():
+                # Add original sample
+                enhanced_data.append(row.to_dict())
+                
+                # Add fewer synthetic samples with more controlled variations
+                for _ in range(4):  # Reduced from 8 to 4
+                    synthetic = row.to_dict()
+                    # More conservative variations
+                    synthetic['genetic_diversity'] *= np.random.uniform(0.98, 1.02)
+                    synthetic['biodiversity_index'] *= np.random.uniform(0.98, 1.02)
+                    synthetic['mean_sst'] *= np.random.uniform(0.99, 1.01)
+                    # Ensure species count remains integer
+                    base_count = row['species_count']
+                    variation = np.random.uniform(0.98, 1.02)
+                    synthetic['species_count'] = int(round(base_count * variation))
+                    enhanced_data.append(synthetic)
+            
+            self.enhanced_dataset = pd.DataFrame(enhanced_data)
+            logger.info(f"Enhanced dataset size: {len(self.enhanced_dataset)}")
+            
+            # Validate enhancement
+            logger.info("\n=== Dataset Statistics ===")
+            logger.info(f"Species count range: {self.enhanced_dataset['species_count'].min()} - {self.enhanced_dataset['species_count'].max()}")
+            logger.info(f"Unique species counts: {sorted(self.enhanced_dataset['species_count'].unique())}")
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error enhancing dataset: {e}")
+            return False
+
+    def prepare_features(self):
+        """Prepare features with improved engineering."""
+        try:
+            # Basic features
+            features = ['genetic_diversity', 'biodiversity_index', 'mean_sst']
+            self.X = self.enhanced_dataset[features].copy()
+            
+            # More focused feature engineering
+            self.X['genetic_bio_interaction'] = np.sqrt(
+                self.X['genetic_diversity'] * self.X['biodiversity_index']
+            )
+            
+            # Normalize temperature stress
+            mean_sst = self.X['mean_sst'].mean()
+            std_sst = self.X['mean_sst'].std()
+            self.X['temperature_stress'] = (
+                (self.X['mean_sst'] - mean_sst) / std_sst
+            ).clip(-2, 2)
+            
+            # Scale features
+            self.scaler = RobustScaler(quantile_range=(5, 95))
+            self.X = pd.DataFrame(
+                self.scaler.fit_transform(self.X),
+                columns=self.X.columns
+            )
+            
+            # Prepare target
+            self.y = self.enhanced_dataset['species_count']
+            
+            # Create stratification bins with unique edges
+            try:
+                y_bins = pd.qcut(self.y, q=5, labels=False, duplicates='drop')
+            except ValueError:
+                # If we can't create 5 bins, try with fewer bins
+                try:
+                    y_bins = pd.qcut(self.y, q=3, labels=False, duplicates='drop')
+                except ValueError:
+                    # If binning fails, use median split
+                    y_bins = (self.y > self.y.median()).astype(int)
+        
+            # Split with stratification where possible
+            if y_bins is not None and len(np.unique(y_bins)) > 1:
+                self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
+                    self.X, self.y, 
+                    test_size=0.2, 
+                    random_state=42,
+                    stratify=y_bins
+                )
+            else:
+                # Fallback to regular split if stratification is not possible
+                self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
+                    self.X, self.y, 
+                    test_size=0.2, 
+                    random_state=42
+                )
+        
+            logger.info(f"Features prepared: {list(self.X.columns)}")
+            logger.info(f"Training set size: {len(self.X_train)}")
+            logger.info(f"Test set size: {len(self.X_test)}")
+            
+            # Log feature statistics
+            logger.info("\n=== Feature Statistics ===")
+            for col in self.X.columns:
+                logger.info(f"{col}:")
+                logger.info(f"  Mean: {self.X[col].mean():.3f}")
+                logger.info(f"  Std: {self.X[col].std():.3f}")
+        
+            return True
+        except Exception as e:
+            logger.error(f"Error preparing features: {e}")
+            return False
+
+    def train_model(self):
+        """Train model with improved parameters."""
+        try:
+            # Use GradientBoostingRegressor with conservative parameters
+            self.model = GradientBoostingRegressor(
+                n_estimators=50,
+                learning_rate=0.05,
+                max_depth=3,
+                min_samples_split=5,
+                min_samples_leaf=3,
+                subsample=0.8,
+                random_state=42
+            )
+            
+            # Fit model
+            self.model.fit(self.X_train, self.y_train)
+            return True
+        except Exception as e:
+            logger.error(f"Error in model training: {e}")
+            return False
+
+    def evaluate_model(self):
+        """Evaluate with k-fold cross-validation."""
+        try:
+            # K-fold cross-validation
+            kf = KFold(n_splits=5, shuffle=True, random_state=42)
+            cv_scores = cross_val_score(
+                self.model, self.X, self.y, 
+                cv=kf, scoring='r2'
+            )
+            
+            # Standard predictions
+            train_pred = self.model.predict(self.X_train)
+            test_pred = self.model.predict(self.X_test)
+            
+            metrics = {
+                'train_r2': r2_score(self.y_train, train_pred),
+                'test_r2': r2_score(self.y_test, test_pred),
+                'cv_r2_mean': cv_scores.mean(),
+                'cv_r2_std': cv_scores.std(),
+                'train_mse': mean_squared_error(self.y_train, train_pred),
+                'test_mse': mean_squared_error(self.y_test, test_pred)
+            }
+            
+            # Feature importance with stability check
+            importance = pd.DataFrame({
+                'feature': self.X.columns,
+                'importance': self.model.feature_importances_
+            }).sort_values('importance', ascending=False)
+            
+            logger.info("\n=== Model Performance ===")
+            logger.info(f"Training R²: {metrics['train_r2']:.3f}")
+            logger.info(f"Testing R²: {metrics['test_r2']:.3f}")
+            logger.info(f"CV R² (mean ± std): {metrics['cv_r2_mean']:.3f} ± {metrics['cv_r2_std']:.3f}")
+            
+            logger.info("\n=== Feature Importance ===")
+            for _, row in importance.iterrows():
+                logger.info(f"{row['feature']}: {row['importance']:.3f}")
+            
+            self.metrics = metrics
+            return True
+        except Exception as e:
+            logger.error(f"Error in model evaluation: {e}")
+            return False
+
+    def save_model(self, model_dir='saved_models'):
+        """Save enhanced model artifacts."""
+        try:
+            os.makedirs(model_dir, exist_ok=True)
+            
+            # Save model and scaler
+            joblib.dump(self.model, os.path.join(model_dir, 'species_abundance_model.pkl'))
+            joblib.dump(self.scaler, os.path.join(model_dir, 'species_abundance_scaler.pkl'))
+            
+            # Save metrics
+            with open(os.path.join(model_dir, 'model_metrics.txt'), 'w') as f:
+                for metric, value in self.metrics.items():
+                    f.write(f"{metric}: {value}\n")
+                    
+            logger.info(f"Model artifacts saved to {model_dir}")
+            return True
+        except Exception as e:
+            logger.error(f"Error saving model: {e}")
+            return False
+
+def main():
+    """Main execution function."""
+    logger.info("Starting enhanced ML model training process...")
+    
+    predictor = EnhancedSpeciesAbundancePredictor()
+    
+    try:
+        logger.info("Enhancing training dataset...")
+        if not predictor.enhance_dataset("../data/ml_dataset.csv"):
+            return False
+            
+        logger.info(f"Enhanced dataset loaded with {len(predictor.enhanced_dataset)} records")
+        
+        if not predictor.prepare_features():
+            return False
+        if not predictor.train_model():
+            return False
+        if not predictor.evaluate_model():
+            return False
+        if not predictor.save_model():
+            return False
+            
+        logger.info("Enhanced ML model training completed successfully!")
+        return True
+    except Exception as e:
+        logger.error(f"Error in main process: {e}")
+        return False
+
+if __name__ == "__main__":
+    success = main()
+    if success:
+        print("✅ Enhanced ML model training completed successfully!")
+    else:
+        print("❌ Enhanced ML model training failed. Check logs for details.")
+
+def test_model():
+    try:
+        # Load model and scaler
+        logger.info("Loading model artifacts...")
+        model = joblib.load('saved_models/species_abundance_model.pkl')
+        scaler = joblib.load('saved_models/species_abundance_scaler.pkl')
+
+        # Test data
+        test_data = pd.DataFrame({
+            'genetic_diversity': [0.75],
+            'biodiversity_index': [0.8],
+            'mean_sst': [27.5]
+        })
+
+        # Create features
+        logger.info("Preparing test features...")
+        test_data['genetic_bio_interaction'] = np.sqrt(
+            test_data['genetic_diversity'] * test_data['biodiversity_index']
+        )
+        
+        mean_sst = test_data['mean_sst'].mean()
+        std_sst = test_data['mean_sst'].std()
+        test_data['temperature_stress'] = (
+            (test_data['mean_sst'] - mean_sst) / std_sst
+        ).clip(-2, 2)
+
+        # Scale features
+        scaled_data = scaler.transform(test_data)
+
+        # Make prediction
+        prediction = model.predict(scaled_data)
+        logger.info(f"Predicted species count: {round(prediction[0])}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error testing model: {e}")
+        return False
+
+if __name__ == "__main__":
+    success = test_model()
+    if success:
+        print("✅ Model test completed successfully!")
+    else:
+        print("❌ Model test failed. Check logs for details.")
