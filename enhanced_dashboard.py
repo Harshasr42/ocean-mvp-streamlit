@@ -1,6 +1,6 @@
 """
 Enhanced Streamlit Dashboard for Ocean Data Integration Platform
-Complete integration with PostgreSQL/PostGIS, external APIs, and real-time data
+Uses simple_main.py as the backend - Simplified for fisherman dashboard
 """
 
 import streamlit as st
@@ -61,13 +61,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# API Configuration
+# API Configuration - Using simple_main.py backend
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 # Helper functions
 @st.cache_data(ttl=300)  # Cache for 5 minutes
 def fetch_api_data(endpoint, params=None):
-    """Fetch data from API with caching."""
+    """Fetch data from simple_main.py API with caching."""
     try:
         response = requests.get(f"{API_BASE_URL}{endpoint}", params=params, timeout=10)
         if response.status_code == 200:
@@ -81,96 +81,49 @@ def fetch_api_data(endpoint, params=None):
 
 @st.cache_data(ttl=60)  # Cache for 1 minute
 def get_health_status():
-    """Get API health status."""
+    """Get API health status from simple_main.py."""
     return fetch_api_data("/health")
 
 def get_dashboard_analytics():
-    """Get dashboard analytics."""
+    """Get dashboard analytics from simple_main.py."""
     return fetch_api_data("/api/analytics/dashboard")
 
-def get_species_data(bbox=None, species=None, start_date=None, end_date=None):
-    """Get species occurrence data."""
-    params = {}
-    if bbox:
-        params['bbox'] = bbox
+def get_species_data(skip=0, limit=100, species=None):
+    """Get species occurrence data from simple_main.py."""
+    params = {"skip": skip, "limit": limit}
     if species:
         params['species'] = species
-    if start_date:
-        params['start_date'] = start_date
-    if end_date:
-        params['end_date'] = end_date
-    
     return fetch_api_data("/api/species", params)
 
-def get_vessel_data(bbox=None, start_date=None, end_date=None):
-    """Get vessel tracking data."""
-    params = {}
-    if bbox:
-        params['bbox'] = bbox
-    if start_date:
-        params['start_date'] = start_date
-    if end_date:
-        params['end_date'] = end_date
-    
+def get_vessel_data(skip=0, limit=100):
+    """Get vessel tracking data from simple_main.py."""
+    params = {"skip": skip, "limit": limit}
     return fetch_api_data("/api/vessels", params)
 
-def get_map_data(bbox=None, include_species=True, include_vessels=True, include_oceanographic=True):
-    """Get combined map data."""
-    # Since simple_main.py doesn't have a combined endpoint, we'll create mock data
-    # that combines species, vessels, and oceanographic data
-    species_data = get_species_data(bbox) if include_species else None
-    vessel_data = get_vessel_data(bbox) if include_vessels else None
-    
-    return {
-        'species': {'markers': species_data or []},
-        'vessels': {'markers': vessel_data or []},
-        'oceanographic': {'heatmap': []}
-    }
+def get_catch_reports():
+    """Get catch reports from simple_main.py."""
+    return fetch_api_data("/api/catch-reports")
 
-def get_satellite_data(bbox, start_date, end_date):
-    """Get satellite data."""
-    # Mock satellite data since simple_main.py doesn't have satellite endpoints
-    return {
-        'results': [
-            {
-                'granule_id': 'SST_001',
-                'product': 'Sea Surface Temperature',
-                'start_date': start_date,
-                'cloud_cover': 15.5,
-                'size_mb': 45.2
-            },
-            {
-                'granule_id': 'SST_002', 
-                'product': 'Ocean Color',
-                'start_date': start_date,
-                'cloud_cover': 8.3,
-                'size_mb': 32.1
-            }
-        ]
-    }
-
-def get_edna_samples(bbox=None, project_name=None, start_date=None, end_date=None, skip=0, limit=200):
-    """Get eDNA samples."""
+def get_edna_samples(skip=0, limit=100):
+    """Get eDNA samples from simple_main.py."""
     params = {"skip": skip, "limit": limit}
-    if bbox:
-        params["bbox"] = bbox
-    if project_name:
-        params["project_name"] = project_name
-    if start_date:
-        params["start_date"] = start_date
-    if end_date:
-        params["end_date"] = end_date
     return fetch_api_data("/api/edna", params)
 
-def get_edna_stats():
-    """Get eDNA stats."""
-    # Mock eDNA stats since simple_main.py doesn't have stats endpoint
-    return {
-        "total_samples": 25,
-        "recent_samples": 5,
-        "avg_species_richness": 12.5,
-        "avg_biodiversity_index": 0.75
-    }
+def get_ocean_data(lat, lon):
+    """Get ocean data from simple_main.py."""
+    params = {"lat": lat, "lon": lon}
+    return fetch_api_data("/api/ocean-data", params)
+
+def predict_species_abundance(prediction_data):
+    """Get species abundance prediction from simple_main.py."""
+    try:
+        response = requests.post(f"{API_BASE_URL}/api/predict", json=prediction_data, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+    except:
+        return None
 
 # Main dashboard
 def main():
@@ -178,7 +131,7 @@ def main():
     st.markdown("""
     <div class="main-header">
         <h1>🌊 Ocean Data Integration Platform</h1>
-        <p>Real-time marine data management with AI-powered insights</p>
+        <p>Fisherman Dashboard - Real-time marine data management with AI-powered insights</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -190,8 +143,8 @@ def main():
         st.subheader("Data Sources")
         include_species = st.checkbox("Species Data", value=True)
         include_vessels = st.checkbox("Vessel Tracking", value=True)
-        include_oceanographic = st.checkbox("Oceanographic Data", value=True)
-        include_satellite = st.checkbox("Satellite Data", value=False)
+        include_catch = st.checkbox("Catch Reports", value=True)
+        include_edna = st.checkbox("eDNA Data", value=False)
         
         # Date range
         st.subheader("Time Range")
@@ -211,8 +164,6 @@ def main():
             max_lat = st.number_input("Max Latitude", value=25.0, min_value=-90.0, max_value=90.0)
             max_lon = st.number_input("Max Longitude", value=90.0, min_value=-180.0, max_value=180.0)
         
-        bbox = f"{min_lat},{min_lon},{max_lat},{max_lon}"
-        
         # Refresh button
         if st.button("🔄 Refresh Data", type="primary"):
             st.cache_data.clear()
@@ -220,30 +171,30 @@ def main():
     
     # Main content tabs
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📊 Dashboard", "🗺️ Interactive Map", "📈 Analytics", "🛰️ Satellite Data", "🧬 eDNA", "⚙️ System Status"
+        "📊 Dashboard", "🗺️ Interactive Map", "📈 Analytics", "🚢 Vessels", "🐟 Catch Reports", "⚙️ System Status"
     ])
     
     with tab1:
-        show_dashboard_tab(bbox, date_range)
+        show_dashboard_tab()
     
     with tab2:
-        show_map_tab(bbox, include_species, include_vessels, include_oceanographic)
+        show_map_tab()
     
     with tab3:
-        show_analytics_tab(bbox, date_range)
+        show_analytics_tab()
     
     with tab4:
-        show_satellite_tab(bbox, date_range)
+        show_vessels_tab()
     
     with tab5:
-        show_edna_tab(bbox, date_range)
+        show_catch_reports_tab()
     
     with tab6:
         show_system_status_tab()
 
-def show_dashboard_tab(bbox, date_range):
+def show_dashboard_tab():
     """Show main dashboard tab."""
-    st.header("📊 Real-time Dashboard")
+    st.header("📊 Fisherman Dashboard")
     
     # Get analytics data
     analytics = get_dashboard_analytics()
@@ -256,28 +207,28 @@ def show_dashboard_tab(bbox, date_range):
             st.metric(
                 label="Species Records",
                 value=analytics.get('species', {}).get('total_records', 0),
-                delta=analytics.get('species', {}).get('recent_observations', 0)
+                delta=analytics.get('species', {}).get('unique_species', 0)
             )
         
         with col2:
             st.metric(
-                label="Active Vessels",
-                value=analytics.get('vessels', {}).get('active_vessels', 0),
-                delta=analytics.get('vessels', {}).get('recent_positions', 0)
+                label="Vessel Records",
+                value=analytics.get('vessels', {}).get('total_records', 0),
+                delta=f"{analytics.get('vessels', {}).get('total_catch_kg', 0):,.0f} kg"
             )
         
         with col3:
             st.metric(
-                label="Total Catch (kg)",
-                value=f"{analytics.get('catch_reports', {}).get('total_catch_kg', 0):,.0f}",
-                delta=analytics.get('catch_reports', {}).get('recent_reports', 0)
+                label="Catch Reports",
+                value=analytics.get('catch_reports', {}).get('total_reports', 0),
+                delta=f"{analytics.get('catch_reports', {}).get('total_weight', 0):,.0f} kg"
             )
         
         with col4:
             st.metric(
-                label="Oceanographic Records",
-                value=analytics.get('oceanographic', {}).get('total_records', 0),
-                delta=analytics.get('oceanographic', {}).get('recent_data', 0)
+                label="eDNA Samples",
+                value=analytics.get('edna', {}).get('total_samples', 0),
+                delta=f"{analytics.get('edna', {}).get('avg_biodiversity_index', 0):.2f} avg"
             )
         
         # Data overview charts
@@ -286,15 +237,15 @@ def show_dashboard_tab(bbox, date_range):
         with col1:
             st.subheader("📈 Data Trends")
             # Create a simple trend chart
-            dates = pd.date_range(start=date_range[0], end=date_range[1], freq='D')
+            dates = pd.date_range(start=datetime.now() - timedelta(days=30), end=datetime.now(), freq='D')
             trend_data = pd.DataFrame({
                 'Date': dates,
                 'Species Observations': np.random.poisson(10, len(dates)),
                 'Vessel Positions': np.random.poisson(5, len(dates)),
-                'Oceanographic Readings': np.random.poisson(8, len(dates))
+                'Catch Reports': np.random.poisson(3, len(dates))
             })
             
-            fig = px.line(trend_data, x='Date', y=['Species Observations', 'Vessel Positions', 'Oceanographic Readings'],
+            fig = px.line(trend_data, x='Date', y=['Species Observations', 'Vessel Positions', 'Catch Reports'],
                          title="Daily Data Collection Trends")
             st.plotly_chart(fig, use_container_width=True)
         
@@ -304,7 +255,7 @@ def show_dashboard_tab(bbox, date_range):
             data_dist = {
                 'Species': analytics.get('species', {}).get('total_records', 0),
                 'Vessels': analytics.get('vessels', {}).get('total_records', 0),
-                'Oceanographic': analytics.get('oceanographic', {}).get('total_records', 0)
+                'Catch Reports': analytics.get('catch_reports', {}).get('total_reports', 0)
             }
             
             fig = px.pie(values=list(data_dist.values()), names=list(data_dist.keys()),
@@ -314,93 +265,65 @@ def show_dashboard_tab(bbox, date_range):
     else:
         st.error("Failed to load dashboard data")
 
-def show_map_tab(bbox, include_species, include_vessels, include_oceanographic):
+def show_map_tab():
     """Show interactive map tab."""
     st.header("🗺️ Interactive Ocean Map")
     
-    # Get map data
-    map_data = get_map_data(bbox, include_species, include_vessels, include_oceanographic)
+    # Get data
+    species_data = get_species_data(limit=50) if st.checkbox("Show Species", value=True) else []
+    vessel_data = get_vessel_data(limit=50) if st.checkbox("Show Vessels", value=True) else []
     
-    if map_data:
-        # Create map
-        center_lat = (float(bbox.split(',')[0]) + float(bbox.split(',')[2])) / 2
-        center_lon = (float(bbox.split(',')[1]) + float(bbox.split(',')[3])) / 2
-        
-        m = folium.Map(
-            location=[center_lat, center_lon],
-            zoom_start=6,
-            tiles='OpenStreetMap'
-        )
-        
-        # Add species markers
-        if include_species and 'species' in map_data and 'markers' in map_data['species']:
-            for marker in map_data['species']['markers']:
-                folium.Marker(
-                    [marker['lat'], marker['lon']],
-                    popup=f"<b>{marker['species']}</b><br>Count: {marker['count']}<br>Date: {marker['date']}",
-                    icon=folium.Icon(color='red', icon='fish', prefix='fa')
-                ).add_to(m)
-        
-        # Add vessel markers
-        if include_vessels and 'vessels' in map_data and 'markers' in map_data['vessels']:
-            for marker in map_data['vessels']['markers']:
-                folium.Marker(
-                    [marker['lat'], marker['lon']],
-                    popup=f"<b>{marker['vessel_name'] or marker['vessel_id']}</b><br>Speed: {marker['speed']} knots<br>Status: {marker['status']}",
-                    icon=folium.Icon(color='blue', icon='ship', prefix='fa')
-                ).add_to(m)
-        
-        # Add vessel tracks
-        if include_vessels and 'vessels' in map_data and 'tracks' in map_data['vessels']:
-            for track in map_data['vessels']['tracks']:
-                if len(track['coordinates']) > 1:
-                    folium.PolyLine(
-                        track['coordinates'],
-                        color=track['color'],
-                        weight=3,
-                        opacity=0.7
-                    ).add_to(m)
-        
-        # Add heatmap for oceanographic data
-        if include_oceanographic and 'oceanographic' in map_data and 'heatmap' in map_data['oceanographic']:
-            heatmap_data = []
-            for point in map_data['oceanographic']['heatmap']:
-                heatmap_data.append([point['lat'], point['lon'], point['intensity']])
-            
-            if heatmap_data:
-                plugins.HeatMap(heatmap_data, name='SST Heatmap').add_to(m)
-        
-        # Add layer control
-        folium.LayerControl().add_to(m)
-        
-        # Display map
-        st_folium = st.components.v1.html(m._repr_html_(), height=600)
-        
-        # Map statistics
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            if include_species and 'species' in map_data:
-                st.metric("Species Points", len(map_data['species'].get('markers', [])))
-        
-        with col2:
-            if include_vessels and 'vessels' in map_data:
-                st.metric("Vessel Positions", len(map_data['vessels'].get('markers', [])))
-        
-        with col3:
-            if include_oceanographic and 'oceanographic' in map_data:
-                st.metric("Oceanographic Points", len(map_data['oceanographic'].get('heatmap', [])))
+    # Create map
+    center_lat = 12.5
+    center_lon = 77.2
     
-    else:
-        st.error("Failed to load map data")
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=6,
+        tiles='OpenStreetMap'
+    )
+    
+    # Add species markers
+    if species_data:
+        for item in species_data:
+            folium.Marker(
+                [item.get('latitude', 0), item.get('longitude', 0)],
+                popup=f"<b>{item.get('species', 'Unknown')}</b><br>Count: {item.get('individual_count', 0)}<br>Date: {item.get('event_date', 'N/A')}",
+                icon=folium.Icon(color='red', icon='fish', prefix='fa')
+            ).add_to(m)
+    
+    # Add vessel markers
+    if vessel_data:
+        for item in vessel_data:
+            folium.Marker(
+                [item.get('latitude', 0), item.get('longitude', 0)],
+                popup=f"<b>Vessel {item.get('vessel_id', 'Unknown')}</b><br>Catch: {item.get('catch_kg', 0)} kg<br>Gear: {item.get('gear_type', 'Unknown')}",
+                icon=folium.Icon(color='blue', icon='ship', prefix='fa')
+            ).add_to(m)
+    
+    # Display map
+    st_folium = st.components.v1.html(m._repr_html_(), height=600)
+    
+    # Map statistics
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Species Points", len(species_data) if species_data else 0)
+    
+    with col2:
+        st.metric("Vessel Positions", len(vessel_data) if vessel_data else 0)
+    
+    with col3:
+        st.metric("Total Catch", f"{sum([v.get('catch_kg', 0) for v in vessel_data]):,.0f} kg" if vessel_data else "0 kg")
 
-def show_analytics_tab(bbox, date_range):
+def show_analytics_tab():
     """Show analytics tab."""
     st.header("📈 Advanced Analytics")
     
     # Get data for analysis
-    species_data = get_species_data(bbox, start_date=date_range[0], end_date=date_range[1])
-    vessel_data = get_vessel_data(bbox, start_date=date_range[0], end_date=date_range[1])
+    species_data = get_species_data(limit=200)
+    vessel_data = get_vessel_data(limit=200)
+    catch_data = get_catch_reports()
     
     if species_data:
         st.subheader("🐟 Species Analysis")
@@ -419,23 +342,10 @@ def show_analytics_tab(bbox, date_range):
                 st.plotly_chart(fig, use_container_width=True)
             
             with col2:
-                # Temporal distribution
-                df_species['event_date'] = pd.to_datetime(df_species['event_date'])
-                daily_counts = df_species.groupby(df_species['event_date'].dt.date).size()
-                fig = px.line(x=daily_counts.index, y=daily_counts.values,
-                            title="Daily Species Observations")
-                st.plotly_chart(fig, use_container_width=True)
-            
-            # Geographic distribution
-            st.subheader("🌍 Geographic Distribution")
-            fig = px.scatter_mapbox(
-                df_species, lat='latitude', lon='longitude',
-                color='species', size='individual_count',
-                hover_data=['species', 'individual_count', 'event_date'],
-                mapbox_style="open-street-map",
-                title="Species Distribution Map"
-            )
-            st.plotly_chart(fig, use_container_width=True)
+                # Individual count distribution
+                if 'individual_count' in df_species.columns:
+                    fig = px.histogram(df_species, x='individual_count', title="Individual Count Distribution")
+                    st.plotly_chart(fig, use_container_width=True)
     
     if vessel_data:
         st.subheader("🚢 Vessel Analysis")
@@ -448,137 +358,97 @@ def show_analytics_tab(bbox, date_range):
             col1, col2 = st.columns(2)
             
             with col1:
-                vessel_counts = df_vessels['vessel_id'].value_counts().head(10)
-                fig = px.bar(x=vessel_counts.index, y=vessel_counts.values,
-                           title="Most Active Vessels")
-                st.plotly_chart(fig, use_container_width=True)
+                if 'vessel_id' in df_vessels.columns:
+                    vessel_counts = df_vessels['vessel_id'].value_counts().head(10)
+                    fig = px.bar(x=vessel_counts.index, y=vessel_counts.values,
+                               title="Most Active Vessels")
+                    st.plotly_chart(fig, use_container_width=True)
             
             with col2:
-                # Speed distribution
-                if 'speed' in df_vessels.columns:
-                    fig = px.histogram(df_vessels, x='speed', title="Vessel Speed Distribution")
+                # Catch weight distribution
+                if 'catch_kg' in df_vessels.columns:
+                    fig = px.histogram(df_vessels, x='catch_kg', title="Catch Weight Distribution")
                     st.plotly_chart(fig, use_container_width=True)
 
-def show_satellite_tab(bbox, date_range):
-    """Show satellite data tab."""
-    st.header("🛰️ Satellite Data")
+def show_vessels_tab():
+    """Show vessels tab."""
+    st.header("🚢 Vessel Tracking")
     
-    # Get satellite data
-    satellite_data = get_satellite_data(bbox, date_range[0], date_range[1])
+    # Get vessel data
+    vessel_data = get_vessel_data(limit=100)
     
-    if satellite_data:
-        st.subheader("📡 Available Satellite Data")
+    if vessel_data:
+        df_vessels = pd.DataFrame(vessel_data)
         
-        # Display satellite data table
-        if 'results' in satellite_data:
-            df_satellite = pd.DataFrame(satellite_data['results'])
+        if not df_vessels.empty:
+            st.subheader("Vessel Data Table")
+            st.dataframe(df_vessels)
             
-            if not df_satellite.empty:
-                st.dataframe(df_satellite[['granule_id', 'product', 'start_date', 'cloud_cover', 'size_mb']])
-                
-                # Satellite data visualization
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    # Product distribution
-                    product_counts = df_satellite['product'].value_counts()
-                    fig = px.pie(values=product_counts.values, names=product_counts.index,
-                                title="Satellite Products Distribution")
-                    st.plotly_chart(fig, use_container_width=True)
-                
-                with col2:
-                    # Cloud cover distribution
-                    if 'cloud_cover' in df_satellite.columns:
-                        fig = px.histogram(df_satellite, x='cloud_cover', title="Cloud Cover Distribution")
-                        st.plotly_chart(fig, use_container_width=True)
-        
-        # Satellite data sync
-        st.subheader("🔄 Data Synchronization")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            if st.button("🛰️ Sync Satellite Data", type="primary"):
-                with st.spinner("Syncing satellite data..."):
-                    # Simulate sync process
-                    time.sleep(2)
-                    st.success("Satellite data sync completed!")
-        
-        with col2:
-            if st.button("🌊 Sync Oceanographic Data"):
-                with st.spinner("Syncing oceanographic data..."):
-                    time.sleep(2)
-                    st.success("Oceanographic data sync completed!")
-        
-        with col3:
-            if st.button("🚢 Sync Vessel Data"):
-                with st.spinner("Syncing vessel data..."):
-                    time.sleep(2)
-                    st.success("Vessel data sync completed!")
-    
+            # Vessel metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total Vessels", len(df_vessels))
+            
+            with col2:
+                total_catch = df_vessels['catch_kg'].sum() if 'catch_kg' in df_vessels.columns else 0
+                st.metric("Total Catch", f"{total_catch:,.0f} kg")
+            
+            with col3:
+                if 'gear_type' in df_vessels.columns:
+                    gear_types = df_vessels['gear_type'].value_counts()
+                    st.metric("Most Common Gear", gear_types.index[0] if len(gear_types) > 0 else "N/A")
+            
+            with col4:
+                if 'vessel_type' in df_vessels.columns:
+                    vessel_types = df_vessels['vessel_type'].value_counts()
+                    st.metric("Vessel Types", len(vessel_types))
     else:
-        st.error("Failed to load satellite data")
+        st.error("Failed to load vessel data")
 
-def show_edna_tab(bbox, date_range):
-    """Show eDNA module tab."""
-    st.header("🧬 eDNA Samples")
+def show_catch_reports_tab():
+    """Show catch reports tab."""
+    st.header("🐟 Catch Reports")
     
-    colf, colr = st.columns([3,1])
-    with colf:
-        project_name = st.text_input("Filter by Project Name", value="")
-    with colr:
-        limit = st.number_input("Limit", value=200, min_value=10, max_value=500, step=10)
-
-    data = get_edna_samples(
-        bbox=bbox,
-        project_name=project_name if project_name else None,
-        start_date=date_range[0], end_date=date_range[1],
-        limit=limit
-    )
-    stats = get_edna_stats()
-
-    if stats:
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Total Samples", stats.get("total_samples", 0))
-        with col2:
-            st.metric("Recent (30d)", stats.get("recent_samples", 0))
-        with col3:
-            st.metric("Avg Richness", f"{stats.get('avg_species_richness', 0):.1f}")
-        with col4:
-            st.metric("Avg Biodiversity", f"{stats.get('avg_biodiversity_index', 0):.2f}")
-
-    if data:
-        df = pd.DataFrame(data)
-        if not df.empty:
-            st.subheader("Samples Table")
-            st.dataframe(df)
-
-            st.subheader("Geographic Distribution")
-            if {'latitude', 'longitude'}.issubset(df.columns):
-                fig = px.scatter_mapbox(
-                    df, lat='latitude', lon='longitude',
-                    color='species_richness' if 'species_richness' in df.columns else None,
-                    hover_data=['sample_id','project_name','sample_date','dominant_species'],
-                    mapbox_style="open-street-map",
-                    title="eDNA Sample Locations"
-                )
+    # Get catch reports
+    catch_data = get_catch_reports()
+    
+    if catch_data:
+        df_catch = pd.DataFrame(catch_data)
+        
+        if not df_catch.empty:
+            st.subheader("Catch Reports Table")
+            st.dataframe(df_catch)
+            
+            # Catch metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total Reports", len(df_catch))
+            
+            with col2:
+                total_weight = df_catch['catch_weight'].sum() if 'catch_weight' in df_catch.columns else 0
+                st.metric("Total Weight", f"{total_weight:,.0f} kg")
+            
+            with col3:
+                if 'species' in df_catch.columns:
+                    species_count = df_catch['species'].nunique()
+                    st.metric("Species Count", species_count)
+            
+            with col4:
+                if 'gear_type' in df_catch.columns:
+                    gear_types = df_catch['gear_type'].value_counts()
+                    st.metric("Gear Types", len(gear_types))
+            
+            # Species distribution
+            if 'species' in df_catch.columns:
+                st.subheader("Species Distribution")
+                species_counts = df_catch['species'].value_counts().head(10)
+                fig = px.bar(x=species_counts.index, y=species_counts.values,
+                           title="Top 10 Species by Catch Reports")
                 st.plotly_chart(fig, use_container_width=True)
-
-            st.subheader("Biodiversity Metrics")
-            metrics_cols = st.columns(2)
-            with metrics_cols[0]:
-                if 'biodiversity_index' in df.columns:
-                    fig = px.histogram(df, x='biodiversity_index', nbins=20, title='Biodiversity Index Distribution')
-                    st.plotly_chart(fig, use_container_width=True)
-            with metrics_cols[1]:
-                if 'species_richness' in df.columns:
-                    fig = px.histogram(df, x='species_richness', nbins=20, title='Species Richness Distribution')
-                    st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No eDNA samples found for the current filters.")
     else:
-        st.error("Failed to load eDNA data")
+        st.info("No catch reports available")
 
 def show_system_status_tab():
     """Show system status tab."""
@@ -595,13 +465,13 @@ def show_system_status_tab():
             st.subheader("🔧 System Components")
             
             components = [
+                ("API Status", health.get('status', 'unknown')),
                 ("Database", health.get('database', 'unknown')),
-                ("Redis Cache", health.get('redis', 'unknown')),
-                ("ML Models", health.get('ml_models', 'unknown'))
+                ("ML Model", health.get('ml_model', 'unknown'))
             ]
             
             for component, status in components:
-                status_class = "status-online" if status == "connected" or status == "loaded" else "status-offline"
+                status_class = "status-online" if status == "healthy" or status == "connected" else "status-offline"
                 st.markdown(f"""
                 <div class="metric-card">
                     <span class="status-indicator {status_class}"></span>
@@ -610,31 +480,19 @@ def show_system_status_tab():
                 """, unsafe_allow_html=True)
         
         with col2:
-            st.subheader("🌐 External APIs")
+            st.subheader("🌐 API Information")
             
-            apis = health.get('external_apis', {})
-            api_components = [
-                ("NOAA", apis.get('noaa', 'unknown')),
-                ("NASA Earthdata", apis.get('nasa_earthdata', 'unknown')),
-                ("Marine Traffic", apis.get('marine_traffic', 'unknown')),
-                ("Weather", apis.get('weather', 'unknown')),
-                ("Satellite", apis.get('satellite', 'unknown'))
-            ]
-            
-            for api, status in api_components:
-                if status == "configured":
-                    status_class = "status-online"
-                elif status == "mock":
-                    status_class = "status-warning"
-                else:
-                    status_class = "status-offline"
-                
-                st.markdown(f"""
-                <div class="metric-card">
-                    <span class="status-indicator {status_class}"></span>
-                    <strong>{api}:</strong> {status}
-                </div>
-                """, unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="metric-card">
+                <strong>API Base URL:</strong> {API_BASE_URL}
+            </div>
+            <div class="metric-card">
+                <strong>Status:</strong> {health.get('status', 'unknown')}
+            </div>
+            <div class="metric-card">
+                <strong>Timestamp:</strong> {health.get('timestamp', 'unknown')}
+            </div>
+            """, unsafe_allow_html=True)
         
         # System metrics
         st.subheader("📊 System Metrics")
@@ -652,46 +510,10 @@ def show_system_status_tab():
         
         with col4:
             st.metric("System Uptime", "99.9%", "0.1%")
-        
-        # Recent activity
-        st.subheader("📈 Recent Activity")
-        
-        # Create activity log
-        activity_data = {
-            'Time': pd.date_range(start=datetime.now() - timedelta(hours=24), periods=24, freq='H'),
-            'API Calls': np.random.poisson(100, 24),
-            'Data Syncs': np.random.poisson(5, 24),
-            'Errors': np.random.poisson(2, 24)
-        }
-        
-        df_activity = pd.DataFrame(activity_data)
-        
-        fig = make_subplots(
-            rows=2, cols=1,
-            subplot_titles=('API Calls per Hour', 'System Events'),
-            vertical_spacing=0.1
-        )
-        
-        fig.add_trace(
-            go.Scatter(x=df_activity['Time'], y=df_activity['API Calls'], name='API Calls'),
-            row=1, col=1
-        )
-        
-        fig.add_trace(
-            go.Scatter(x=df_activity['Time'], y=df_activity['Data Syncs'], name='Data Syncs'),
-            row=2, col=1
-        )
-        
-        fig.add_trace(
-            go.Scatter(x=df_activity['Time'], y=df_activity['Errors'], name='Errors'),
-            row=2, col=1
-        )
-        
-        fig.update_layout(height=600, showlegend=True)
-        st.plotly_chart(fig, use_container_width=True)
     
     else:
         st.error("Failed to load system status")
+        st.info("Make sure the simple_main.py backend is running on http://localhost:8000")
 
 if __name__ == "__main__":
     main()
